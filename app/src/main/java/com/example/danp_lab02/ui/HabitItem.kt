@@ -5,14 +5,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.example.danp_lab02.model.Habit
+import com.example.danp_lab02.model.HabitWithStatus
 
 @Composable
 fun HabitItem(
-    habit: Habit,
+    habitWithStatus: HabitWithStatus,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
+    val habit = habitWithStatus.habit
+    val isCompleted = habitWithStatus.isCompleted
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -21,13 +24,13 @@ fun HabitItem(
     ) {
         Row(modifier = Modifier.weight(1f)) {
             Checkbox(
-                checked = habit.isCompletedToday,
+                checked = isCompleted,
                 onCheckedChange = onToggle
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = habit.title,
-                style = if (habit.isCompletedToday)
+                style = if (isCompleted)
                     MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -35,8 +38,8 @@ fun HabitItem(
                     MaterialTheme.typography.bodyLarge
             )
         }
-        Button(onClick = onDelete) {
-            Text("Eliminar")
+        IconButton(onClick = onDelete) {
+            Text("🗑️")
         }
     }
 }

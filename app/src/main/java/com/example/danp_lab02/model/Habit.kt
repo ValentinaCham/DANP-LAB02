@@ -8,5 +8,24 @@ data class Habit(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val title: String,
-    val isCompletedToday: Boolean = false
+    val repeatDays: String // Guardado como "1,2,3" donde 1=Lunes, 7=Domingo
+)
+
+@Entity(
+    tableName = "habit_completions",
+    primaryKeys = ["habitId", "date"]
+)
+data class HabitCompletion(
+    val habitId: Int,
+    val date: String // Formato "YYYY-MM-DD"
+)
+
+data class HabitWithStatus(
+    val habit: Habit,
+    val isCompleted: Boolean
+)
+
+data class DayProgress(
+    val date: String,
+    val progress: Float
 )

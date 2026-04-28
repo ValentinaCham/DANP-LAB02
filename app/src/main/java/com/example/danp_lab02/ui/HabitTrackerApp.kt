@@ -79,6 +79,13 @@ fun MainScreen(viewModel: HabitViewModel) {
     var input by remember { mutableStateOf("") }
     val habitsWithStatus by viewModel.habitsWithStatus.collectAsState()
     val selectedDays = remember { mutableStateListOf(1, 2, 3, 4, 5, 6, 7) }
+    var filter by remember { mutableStateOf("All") }
+
+    val filteredHabits = when (filter) {
+        "Done" -> habitsWithStatus.filter { it.isCompleted }
+        "Pendant" -> habitsWithStatus.filter { !it.isCompleted }
+        else -> habitsWithStatus
+    }
 
     val completedCount = habitsWithStatus.count { it.isCompleted }
     val totalCount = habitsWithStatus.size
@@ -251,16 +258,50 @@ fun MainScreen(viewModel: HabitViewModel) {
 
         // Daily Rituals
         item {
-            Text("DAILY RITUALS", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("DAILY RITUALS", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Pendant", "Done").forEach { option ->
+                        val isSelected = filter == option
+                        Surface(
+                            modifier = Modifier.clickable { filter = option },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            border = if (!isSelected) BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f)) else null
+                        ) {
+                            Text(
+                                text = option,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else Color.Gray
+                            )
+                        }
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (habitsWithStatus.isEmpty()) {
+        if (filteredHabits.isEmpty()) {
             item {
-                Text("No habits for today.", modifier = Modifier.padding(16.dp))
+                Text(
+                    text = when (filter) {
+                        "Done" -> "No completed habits yet."
+                        "Pendant" -> "All caught up! No pending habits."
+                        else -> "No habits for today."
+                    },
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray
+                )
             }
         } else {
-            items(habitsWithStatus, key = { it.habit.id }) { item ->
+            items(filteredHabits, key = { it.habit.id }) { item ->
                 HabitItem(
                     habitWithStatus = item,
                     onToggle = { checked -> viewModel.toggleHabit(item.habit.id, checked) },

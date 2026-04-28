@@ -27,15 +27,21 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     val last7DaysProgress: StateFlow<List<DayProgress>> = combine(
         habitDao.getAllHabits(),
-        // Observamos cambios en todas las completaciones (simplificado para el ejemplo)
-        habitDao.getAllHabits() // Solo para disparar actualizaciones cuando cambien hábitos
-    ) { _, _ ->
+        habitDao.getAllCompletions()
+    ) { allHabits, allCompletions ->
         (0..6).map { i ->
             val date = LocalDate.now().minusDays(i.toLong())
-            val progress = calculateProgressForDateSync(date)
+            val progress = calculateProgressForDate(date, allHabits, allCompletions)
             DayProgress(date.toString(), progress)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val currentStreak: StateFlow<Int> = combine(
+        habitDao.getAllHabits(),
+        habitDao.getAllCompletions()
+    ) { allHabits, allCompletions ->
+        calculateStreak(allHabits, allCompletions)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     private fun getHabitsWithStatusForDate(date: LocalDate): Flow<List<HabitWithStatus>> {
         val dateStr = date.toString()
@@ -53,18 +59,44 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Función auxiliar para calcular progreso de forma síncrona dentro de un flow (aproximación)
-    private suspend fun calculateProgressForDateSync(date: LocalDate): Float {
+    private fun calculateProgressForDate(
+        date: LocalDate, 
+        allHabits: List<Habit>, 
+        allCompletions: List<HabitCompletion>
+    ): Float {
         val dateStr = date.toString()
         val dayOfWeek = date.dayOfWeek.value
-        val allHabits = habitDao.getAllHabits().first()
-        val completions = habitDao.getCompletionsByDate(dateStr).first()
         
         val habitsForDay = allHabits.filter { it.repeatDays.contains(dayOfWeek.toString()) }
         if (habitsForDay.isEmpty()) return 0f
         
-        val completedCount = completions.count { comp -> habitsForDay.any { it.id == comp.habitId } }
+        val completionsForDay = allCompletions.filter { it.date == dateStr }
+        val completedCount = completionsForDay.count { comp -> habitsForDay.any { it.id == comp.habitId } }
+        
         return completedCount.toFloat() / habitsForDay.size
+    }
+
+    private fun calculateStreak(allHabits: List<Habit>, allCompletions: List<HabitCompletion>): Int {
+        var streak = 0
+        var checkDate = LocalDate.now()
+        
+        // El usuario quiere que una racha cuente si tiene al menos un 75%
+        while (true) {
+            val progress = calculateProgressForDate(checkDate, allHabits, allCompletions)
+            if (progress >= 0.75f) {
+                streak++
+                checkDate = checkDate.minusDays(1)
+            } else {
+                // Si llegamos a hoy y aún no tiene el 75%, miramos ayer para ver si la racha sigue viva
+                // (permitiendo al usuario completar hoy para mantener la racha)
+                if (checkDate == LocalDate.now()) {
+                    checkDate = checkDate.minusDays(1)
+                    continue 
+                }
+                break
+            }
+        }
+        return streak
     }
 
     fun setSelectedDate(date: LocalDate) {

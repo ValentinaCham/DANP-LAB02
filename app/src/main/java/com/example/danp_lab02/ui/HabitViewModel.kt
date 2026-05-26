@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.danp_lab02.data.HabitDatabase
+import com.example.danp_lab02.data.repository.HabitRepository
+import com.example.danp_lab02.data.repository.HabitRepositoryImpl
 import com.example.danp_lab02.model.DayProgress
 import com.example.danp_lab02.model.Habit
 import com.example.danp_lab02.model.HabitCompletion
@@ -14,41 +16,73 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 class HabitViewModel(application: Application) : AndroidViewModel(application) {
-    private val habitDao = HabitDatabase.getDatabase(application).habitDao()
+    private val repository: HabitRepository = HabitRepositoryImpl(
+        HabitDatabase.getDatabase(application).habitDao()
+    )
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
-    val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
+    
+    val uiState: StateFlow<HabitUiState> = combine(
+        _selectedDate.flatMapLatest { date -> getHabitsWithStatusForDate(date) },
+        _selectedDate,
+        calculateWeeklyProgress(),
+        calculateStreakFlow()
+    ) { habits, date, weeklyProgress, streak ->
+        HabitUiState(
+            habits = habits,
+            selectedDate = date,
+            weeklyProgress = weeklyProgress,
+            currentStreak = streak
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HabitUiState())
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val habitsWithStatus: StateFlow<List<HabitWithStatus>> = _selectedDate
-        .flatMapLatest { date ->
-            getHabitsWithStatusForDate(date)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Exponemos habitsWithStatus para compatibilidad con la UI actual o la refactorizamos luego
+    val habitsWithStatus = uiState.map { it.habits }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val last7DaysProgress: StateFlow<List<DayProgress>> = combine(
-        habitDao.getAllHabits(),
-        habitDao.getAllCompletions()
+    init {
+        seedDatabase()
+    }
+
+    private fun seedDatabase() {
+        viewModelScope.launch {
+            val existingHabits = repository.getAllHabits().first()
+            if (existingHabits.size < 10) {
+                (1..80).forEach { i ->
+                    repository.insertHabit(
+                        Habit(
+                            title = "Habit sintético #$i",
+                            repeatDays = "1,2,3,4,5,6,7"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun calculateWeeklyProgress(): Flow<List<DayProgress>> = combine(
+        repository.getAllHabits(),
+        repository.getAllCompletions()
     ) { allHabits, allCompletions ->
         (0..6).map { i ->
             val date = LocalDate.now().minusDays(i.toLong())
             val progress = calculateProgressForDate(date, allHabits, allCompletions)
             DayProgress(date.toString(), progress)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
 
-    val currentStreak: StateFlow<Int> = combine(
-        habitDao.getAllHabits(),
-        habitDao.getAllCompletions()
+    private fun calculateStreakFlow(): Flow<Int> = combine(
+        repository.getAllHabits(),
+        repository.getAllCompletions()
     ) { allHabits, allCompletions ->
         calculateStreak(allHabits, allCompletions)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    }
 
     private fun getHabitsWithStatusForDate(date: LocalDate): Flow<List<HabitWithStatus>> {
         val dateStr = date.toString()
         val dayOfWeek = date.dayOfWeek.value
         return combine(
-            habitDao.getAllHabits(),
-            habitDao.getCompletionsByDate(dateStr)
+            repository.getAllHabits(),
+            repository.getCompletionsByDate(dateStr)
         ) { allHabits, completions ->
             val completedIds = completions.map { it.habitId }.toSet()
             allHabits
@@ -105,7 +139,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addHabit(title: String, days: List<Int>) {
         viewModelScope.launch {
-            habitDao.insertHabit(Habit(title = title, repeatDays = days.joinToString(",")))
+            repository.insertHabit(Habit(title = title, repeatDays = days.joinToString(",")))
         }
     }
 
@@ -113,17 +147,17 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val dateStr = _selectedDate.value.toString()
             if (isCompleted) {
-                habitDao.insertCompletion(HabitCompletion(habitId, dateStr))
+                repository.insertCompletion(HabitCompletion(habitId, dateStr))
             } else {
-                habitDao.deleteCompletion(HabitCompletion(habitId, dateStr))
+                repository.deleteCompletion(HabitCompletion(habitId, dateStr))
             }
         }
     }
 
     fun deleteHabit(habitId: Int) {
         viewModelScope.launch {
-            habitDao.deleteHabit(Habit(id = habitId, title = "", repeatDays = ""))
-            habitDao.deleteCompletionsByHabitId(habitId)
+            repository.deleteHabit(Habit(id = habitId, title = "", repeatDays = ""))
+            repository.deleteCompletionsByHabitId(habitId)
         }
     }
 }

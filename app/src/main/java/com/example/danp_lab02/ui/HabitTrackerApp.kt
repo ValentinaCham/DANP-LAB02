@@ -81,15 +81,28 @@ fun MainScreen(viewModel: HabitViewModel) {
     val selectedDays = remember { mutableStateListOf(1, 2, 3, 4, 5, 6, 7) }
     var filter by remember { mutableStateOf("All") }
 
-    val filteredHabits = when (filter) {
-        "Done" -> habitsWithStatus.filter { it.isCompleted }
-        "Pendant" -> habitsWithStatus.filter { !it.isCompleted }
-        else -> habitsWithStatus
+    // OPTIMIZACIÓN 1: derivedStateOf para filtrado
+    val filteredHabits by remember(habitsWithStatus, filter) {
+        derivedStateOf {
+            when (filter) {
+                "Done" -> habitsWithStatus.filter { it.isCompleted }
+                "Pendant" -> habitsWithStatus.filter { !it.isCompleted }
+                else -> habitsWithStatus
+            }
+        }
     }
 
-    val completedCount = habitsWithStatus.count { it.isCompleted }
-    val totalCount = habitsWithStatus.size
-    val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
+    // OPTIMIZACIÓN 2: derivedStateOf para métricas de progreso
+    val progressMetrics by remember(habitsWithStatus) {
+        derivedStateOf {
+            val total = habitsWithStatus.size
+            val done = habitsWithStatus.count { it.isCompleted }
+            val ratio = if (total > 0) done.toFloat() / total else 0f
+            Triple(ratio, done, total)
+        }
+    }
+
+    val (progress, completedCount, totalCount) = progressMetrics
 
     LazyColumn(
         modifier = Modifier
@@ -302,10 +315,14 @@ fun MainScreen(viewModel: HabitViewModel) {
             }
         } else {
             items(filteredHabits, key = { it.habit.id }) { item ->
+                // OPTIMIZACIÓN 3: Lambdas recordadas para evitar recomposición de HabitItem
+                val onToggle = remember(item.habit.id) { { checked: Boolean -> viewModel.toggleHabit(item.habit.id, checked) } }
+                val onDelete = remember(item.habit.id) { { viewModel.deleteHabit(item.habit.id) } }
+
                 HabitItem(
                     habitWithStatus = item,
-                    onToggle = { checked -> viewModel.toggleHabit(item.habit.id, checked) },
-                    onDelete = { viewModel.deleteHabit(item.habit.id) }
+                    onToggle = onToggle,
+                    onDelete = onDelete
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
